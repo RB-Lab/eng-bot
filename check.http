@@ -1,0 +1,13 @@
+###
+POST https://e4dduo4cf2.execute-api.eu-central-1.amazonaws.com/callback
+
+{
+    "message": {
+        "chat": {"id":"123456789"},
+        "text": "Hello World"
+    }
+}
+
+### --- Rgister webhook in Telegram API
+
+GET https://api.telegram.org/bot{{$dotenv BOT_TOKEN}}/setWebhook?secret_token={{$dotenv BOT_CALLBACK_TOKEN}}&url=https%3A%2F%2Fe4dduo4cf2.execute-api.eu-central-1.amazonaws.com%2Fcallback

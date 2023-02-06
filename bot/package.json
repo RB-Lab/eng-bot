@@ -1,0 +1,21 @@
+{
+  "name": "eng-bot",
+  "version": "1.0.0",
+  "author": "RB-Lab",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "build": "rm -rf dist && esbuild ./src/bot.ts --bundle --platform=node --target=node18 --outfile=dist/index.js",
+    "postbuild": "cd dist && zip ./bot.zip ./index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.264.0",
+    "@types/aws-lambda": "^8.10.110",
+    "aws-lambda": "^1.0.7",
+    "openai": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.19",
+    "esbuild": "^0.17.5"
+  }
+}

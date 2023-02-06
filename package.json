@@ -1,0 +1,11 @@
+{
+  "name": "eng-bot",
+  "version": "1.0.0",
+  "author": "RB-Lab",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "predeploy": "cd bot && yarn build && cd -",
+    "deploy": "cd deploy && cdk deploy && cd -"
+  }
+}
