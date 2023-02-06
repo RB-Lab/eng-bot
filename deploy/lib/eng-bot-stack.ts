@@ -14,7 +14,7 @@ export class EngBotStack extends Stack {
             runtime: Runtime.NODEJS_18_X,
             handler: 'index.handler',
             code: Code.fromAsset(path.resolve('..', 'bot', 'dist', 'bot.zip')),
-            timeout: Duration.seconds(30),
+            timeout: Duration.seconds(60),
         })
         // add bot function permissions to secrets manager
         bot.addToRolePolicy(

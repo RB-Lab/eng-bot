@@ -7,7 +7,7 @@ export async function correctEssay(essay: string) {
         apiKey: (await getSecrets()).openApiToken,
     })
     const openai = new OpenAIApi(configuration)
-    
+
     const completion = await openai.createCompletion({
         model: 'text-davinci-003',
         prompt: generatePrompt(essay),
@@ -17,7 +17,7 @@ export async function correctEssay(essay: string) {
     })
 
     console.log('[INFO] used:', completion.data.usage)
-    return completion.data['choices'][0]['text']
+    return completion.data['choices'][0]['text'] || ''
 }
 
 function generatePrompt(essay: string) {

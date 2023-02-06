@@ -7,5 +7,6 @@
   "scripts": {
     "predeploy": "cd bot && yarn build && cd -",
     "deploy": "cd deploy && cdk deploy && cd -"
-  }
+  },
+  "dependencies": {}
 }
