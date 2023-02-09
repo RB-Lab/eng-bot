@@ -3,7 +3,7 @@ import { ArrayChange, diffArrays } from 'diff'
 export function formatCorrection(oldText: string, newText: string) {
     const splitOldText = oldText.split(/\n/)
     const splitNewText = newText.split(/\n/)
-    if(splitOldText.length !== splitNewText.length) {
+    if (splitOldText.length !== splitNewText.length) {
         // TODO Hmm.. there should be a better way with diffing against paragraphs 🤔
         return formatLines(oldText, newText)
     }

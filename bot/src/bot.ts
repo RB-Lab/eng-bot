@@ -1,8 +1,9 @@
 import { Context, APIGatewayProxyCallback, APIGatewayEvent } from 'aws-lambda'
+import { log } from './lib/log'
 import { base64Decode } from './lib/base-64'
 import { formatCorrection } from './lib/format-correction'
-import { post } from './lib/post'
 import { correctEssay } from './lib/prompts/correction'
+import { Telega } from './lib/telega'
 import { getSecrets } from './lib/secret-service'
 
 export const handler = async (
@@ -18,41 +19,30 @@ export const handler = async (
         return
     }
     try {
-        console.log('[INFO] inside handler getting secret', event)
+        log.debug('event has body, starting Telega', event)
+        const { botToken } = await getSecrets()
+        const telega = new Telega(botToken)
 
         // TODO check header for X-Telegram-Bot-Api-Secret-Token
         let body = event.body
         if (event.isBase64Encoded) {
             body = base64Decode(body)
         }
-        const { botToken } = await getSecrets()
-
-        console.log('[INFO] got secret, parsing event', body)
-
         const message = JSON.parse(body)
-        const chatId = message.message.chat.id
-        const text = message.message.text
-        const address = `https://api.telegram.org/bot${botToken}/`
-        const sendMessageUrl = new URL(`${address}sendMessage`)
-        const typingUrl = new URL(`${address}sendChatAction`)
-        const typingResponse = await post(typingUrl, {
-            chat_id: chatId,
-            action: 'typing',
+
+        log.debug('body parsed', body)
+
+        telega.onText(async ({ chatId, text }) => {
+            log.debug('requesting correction')
+            await telega.sendTyping(chatId)
+            const correction = await correctEssay(text)
+            await telega.sendMessage(chatId, "Here's corrected version:")
+            await telega.sendMessage(chatId, formatCorrection(text, correction))
         })
 
-        console.log('[INFO] requesting correction', typingResponse)
-        const correction = await correctEssay(text)
-        let response = await post(sendMessageUrl, {
-            chat_id: chatId,
-            text: "Here's corrected version:",
-        })
-        response = await post(sendMessageUrl, {
-            chat_id: chatId,
-            text: formatCorrection(text, correction),
-            parse_mode: 'HTML',
-        })
+        telega.run(message)
 
-        console.log('[SUCCESS]', response)
+        log.debug('SUCCESS!')
 
         callback(null, {
             statusCode: 200,
