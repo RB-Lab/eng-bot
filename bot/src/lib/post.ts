@@ -1,10 +1,17 @@
 import * as https from 'https'
-import { getSecrets } from './secret-service'
+import { log } from './log'
+// @ts-ignore
+// import fetch from 'node-fetch'
 
-export async function post(url: URL, data: Object) {
-    const { botToken } = await getSecrets()
-    
-    console.log('[POST]', url.href.replace(botToken, '****'), data)
+export async function post(botToken: string, url: URL, data: Object) {
+    log.debug('[POST]', url.href.replace(botToken, '****'), data)
+
+    // const cfg = {
+    //     method: 'POST',
+    //     headers: { 'content-type': 'application/json', connection: 'keep-alive' },
+    //     body: JSON.stringify(data),
+    //   }
+    //   return  fetch(url, cfg)
 
     return new Promise((resolve, reject) => {
         const json = JSON.stringify(data)
