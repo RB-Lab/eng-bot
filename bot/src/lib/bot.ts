@@ -1,0 +1,169 @@
+import { Telegraf, Markup, Context } from 'telegraf'
+import { InlineKeyboardButton } from 'telegraf/typings/core/types/typegram'
+import {
+    createCorrectionUnits,
+    formatCorrection,
+    formatCorrectionUnit,
+} from './correction'
+import { log } from './log'
+import { CorrectionUnit, ID, Stores, User } from './model'
+import { OpenAI } from './open-ai'
+
+export interface EngBotContext extends Context {
+    user: User
+}
+
+export interface Config {
+    bot: Telegraf<EngBotContext>
+    openAi: OpenAI
+    stores: Stores
+}
+
+export function createBot({ bot, openAi, stores }: Config) {
+    // Authentication kinda
+    bot.use(async (ctx, next) => {
+        if (!ctx.chat || !ctx.from) {
+            throw new Error("Can't authenticate user without chat data")
+        }
+        let user = await stores.userStore.getUser(ctx.chat.id)
+        if (user) {
+            ctx.user = user
+        } else {
+            ctx.user = await stores.userStore.createUser({
+                chatId: ctx.chat.id,
+                created: Date.now(),
+            })
+        }
+        return next()
+    })
+    // greeting
+    bot.start((ctx) => {
+        return ctx.reply(
+            'Welcome to the English tutor bot, where AI meets language learning! ' +
+                "We're here to help you level up your writing game. Our bot checks " +
+                'your essays, highlights errors, and explains why they matter. Perfect ' +
+                'for Intermediate+ learners looking to fine-tune their skills. Just keep ' +
+                "in mind, AI isn't always right, but it's always worth a shot. " +
+                "Let's get started!\n\n" +
+                'We recommend checking one or two short essays (think 2-3 tweets) a day ' +
+                'with us for the best result.'
+        )
+    })
+
+    bot.on('text', async (ctx) => {
+        ctx.sendChatAction('typing')
+        const text = ctx.message.text
+        const correctionString = await openAi.getCorrection(text)
+        const correctionUnits = createCorrectionUnits(text, correctionString)
+        const correction = await stores.correctionStore.createCorrection({
+            chatId: ctx.user.chatId,
+            text,
+            created: Date.now(),
+            corrected: correctionString,
+            correctionUnits: correctionUnits,
+        })
+        await ctx.reply('Here is corrected version:')
+        return ctx.reply(
+            {
+                text: formatCorrection(text, correctionString),
+                parse_mode: 'HTML' as any,
+            },
+            Markup.inlineKeyboard([
+                Markup.button.callback('Ok', 'ok'),
+                Markup.button.callback('Explain', `explain:${correction.id}`),
+            ])
+        )
+    })
+
+    bot.action('ok', async (ctx) => {
+        ctx.chat?.id
+        await ctx.answerCbQuery()
+        return ctx.editMessageReplyMarkup(
+            Markup.inlineKeyboard([]).reply_markup
+        )
+    })
+
+    bot.action(/explain:(\w+)/, async (ctx) => {
+        await ctx.answerCbQuery()
+        const id = ctx.match.input.split(':')[1]
+        if (!id) {
+            // TODO use bot.catch
+            log.error(`No id in explain action ${ctx.match.input}`)
+            return ctx.reply('Something went wrong :(')
+        }
+        const correction = await stores.correctionStore.getCorrection(
+            ctx.user.chatId,
+            id
+        )
+        if (!correction) {
+            log.error(`No correction with id ${id}`)
+            return ctx.reply('Something went wrong :(')
+        }
+
+        return ctx.editMessageReplyMarkup(
+            Markup.inlineKeyboard(
+                correctionToButton(id, correction.correctionUnits)
+            ).reply_markup
+        )
+    })
+
+    bot.action(/explainReplacement:(\d+)/, async (ctx) => {
+        await ctx.answerCbQuery()
+        const cmd = ctx.match.input.split(':')
+
+        const id = cmd[1]
+        const i = cmd[2]
+        if (!id) {
+            log.error(`No id in explainReplacement action ${ctx.match.input}`)
+            return ctx.reply('Something went wrong :(')
+        }
+        const correction = await stores.correctionStore.getCorrection(
+            ctx.user.chatId,
+            id
+        )
+        if (!correction) {
+            log.error(`No correction with id ${id}`)
+            return ctx.reply('Something went wrong :(')
+        }
+        if (!i) {
+            log.error(
+                `No correction index in explainReplacement action ${ctx.match.input}`
+            )
+            return ctx.reply('Something went wrong :(')
+        }
+        const unit = correction.correctionUnits[Number(i)]
+        if (!unit) {
+            log.error(`No correction unit with index ${i}`)
+            return ctx.reply('Something went wrong :(')
+        }
+        let { explanation } = unit
+        if (!explanation) {
+            explanation = await openAi.getExplanation(correction, unit)
+        }
+        correction.correctionUnits[Number(i)] = {
+            ...unit,
+            explanation,
+        }
+        stores.correctionStore.updateCorrection(correction)
+
+        await ctx.editMessageReplyMarkup(
+            Markup.inlineKeyboard(
+                correctionToButton(id, correction.correctionUnits)
+            ).reply_markup
+        )
+        return ctx.reply(explanation)
+    })
+}
+
+function correctionToButton(id: ID, corrections: CorrectionUnit[]) {
+    const buttons: InlineKeyboardButton[][] = []
+    for (let i = 0; i < corrections.length; i++) {
+        if (corrections[i].explanation) continue
+        const formatted = formatCorrectionUnit(corrections[i])
+        if (!formatted) continue
+        buttons.push([
+            Markup.button.callback(formatted, `explainReplacement:${id}:${i}`),
+        ])
+    }
+    return buttons
+}
