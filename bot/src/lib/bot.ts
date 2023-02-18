@@ -138,6 +138,7 @@ export function createBot({ bot, openAi, stores }: Config) {
         }
         let { explanation } = unit
         if (!explanation) {
+            ctx.sendChatAction('typing')
             explanation = await openAi.getExplanation(correction, unit)
         }
         correction.correctionUnits[Number(i)] = {
