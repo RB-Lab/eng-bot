@@ -8,32 +8,34 @@ const secretsManager = new SecretsManagerClient({
     region: 'eu-central-1',
 })
 
-let tokens: null | {[key: string]: string} = null
+let tokens: null | { [key: string]: string } = null
 
-export async function getSecrets(){
-    log.debug('getting tokens')
-    if(!tokens){
+export async function getSecrets() {
+    const id = process.env.SECRETS_ID || ''
+    log.debug('getting tokens', id)
+    if (!tokens) {
         const tokens_ = await secretsManager.send(
             new GetSecretValueCommand({
-                SecretId: 'eng-bot-tokens',
+                SecretId: id,
                 VersionStage: 'AWSCURRENT',
             })
         )
-        try{
-            if(!tokens_.SecretString) throw new Error('No tokens in SecretString')
+        try {
+            if (!tokens_.SecretString)
+                throw new Error('No tokens in SecretString')
             tokens = JSON.parse(tokens_.SecretString || '{}')
         } catch (e) {
             log.error('cannot parse tokens', tokens_.SecretString)
             throw e
         }
     }
-    if(!tokens){
+    if (!tokens) {
         throw new Error('cannot parse tokens')
     }
     log.debug('got tokens')
     return {
         botToken: tokens['bot-token'],
         callbackToken: tokens['callback-token'],
-        openApiToken: tokens['open-api-token'],
+        openAiToken: tokens['open-api-token'],
     }
 }

@@ -1,12 +1,16 @@
 {
-  "name": "eng-bot",
-  "version": "1.0.0",
-  "author": "RB-Lab",
-  "license": "UNLICENSED",
-  "private": true,
-  "scripts": {
-    "predeploy": "cd bot && yarn build && cd -",
-    "deploy": "cd deploy && cdk deploy && cd -"
-  },
-  "dependencies": {}
+    "name": "eng-bot",
+    "version": "1.0.0",
+    "author": "RB-Lab",
+    "license": "UNLICENSED",
+    "private": true,
+    "scripts": {
+        "predeploy:prod": "cd bot && yarn build && cd -",
+        "deploy:prod": "cd deploy && ENV=prod cdk deploy && cd -",
+        "plan:prod": "cd deploy && ENV=prod cdk diff && cd -",
+        "predeploy:stag": "cd bot && yarn build && cd -",
+        "deploy:stag": "cd deploy && ENV=stag cdk deploy && cd -",
+        "plan:stag": "cd deploy && ENV=stag cdk diff && cd -"
+    },
+    "dependencies": {}
 }

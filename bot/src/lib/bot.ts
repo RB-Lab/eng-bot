@@ -6,7 +6,7 @@ import {
     formatCorrectionUnit,
 } from './correction'
 import { log } from './log'
-import { CorrectionUnit, ID, Stores, User } from './model'
+import { CorrectionUnit, ID, Stores, User } from './stores'
 import { OpenAI } from './open-ai'
 
 export interface EngBotContext extends Context {
@@ -36,20 +36,62 @@ export function createBot({ bot, openAi, stores }: Config) {
         }
         return next()
     })
+
+    bot.catch((err, ctx) => {
+        log.error(err)
+        ctx.reply('Oops! Something went wrong 😩')
+    })
+
+    const helpText =
+        'Welcome to the English tutor bot, where AI meets language learning! ' +
+        "We're here to help you level up your writing game. Our bot checks " +
+        'your essays, highlights errors, and explains why they matter. Perfect ' +
+        'for Intermediate+ learners looking to fine-tune their skills.' +
+        "Let's get started!\n\n" +
+        'We recommend checking one or two short essays (think 2-3 tweets) a day ' +
+        'with us for the best result.\n\n' +
+        '<b>AI warning</b> This bot uses GPT-3, so it provides correct suggestions ' +
+        'most of the time, but sometimes it made stuff up. So take it with a grain of salt!'
     // greeting
-    bot.start((ctx) => {
-        return ctx.reply(
-            'Welcome to the English tutor bot, where AI meets language learning! ' +
-                "We're here to help you level up your writing game. Our bot checks " +
-                'your essays, highlights errors, and explains why they matter. Perfect ' +
-                'for Intermediate+ learners looking to fine-tune their skills. Just keep ' +
-                "in mind, AI isn't always right, but it's always worth a shot. " +
-                "Let's get started!\n\n" +
-                'We recommend checking one or two short essays (think 2-3 tweets) a day ' +
-                'with us for the best result.'
+    bot.start((ctx) => ctx.reply(helpText, { parse_mode: 'HTML' }))
+
+    bot.command('help', (ctx) => ctx.reply(helpText, { parse_mode: 'HTML' }))
+
+    bot.command('feedback', async (ctx) => {
+        const text = ctx.message.text.replace('/feedback', '').trim()
+        if (!text) {
+            return ctx.reply(
+                'To provide feedback, type it after the command, i.e. \n' +
+                    ' /feedback <HERE GOES YOUR MESSAGE>'
+            )
+        }
+        const username =
+            ctx.from?.username ||
+            ctx.from?.first_name + ' ' + ctx.from?.last_name ||
+            'unnamed'
+        log.info(`[FEEDBACK] from ${username} (${ctx.user.chatId}): ${text}`)
+        return ctx.reply('Thank you for your feedback!')
+    })
+
+    bot.command('topics', async (ctx) => {
+        const categories = await stores.topicsStore.getCategories()
+        const buttons = categories.map((category) => [
+            Markup.button.callback(category.name, `category:${category.id}`),
+        ])
+        return ctx.reply('Choose category', Markup.inlineKeyboard(buttons))
+    })
+
+    bot.action(/category:(\d+)/, async (ctx) => {
+        const categoryId = ctx.match.input.split(':')[1]
+        await ctx.answerCbQuery()
+        const topics = await stores.topicsStore.getTopics(categoryId)
+        ctx.editMessageText(
+            topics.map((t) => `• ${t}`).join('\n'),
+            Markup.inlineKeyboard([])
         )
     })
 
+    // main essay correction goes here
     bot.on('text', async (ctx) => {
         ctx.sendChatAction('typing')
         const text = ctx.message.text
@@ -87,17 +129,14 @@ export function createBot({ bot, openAi, stores }: Config) {
         await ctx.answerCbQuery()
         const id = ctx.match.input.split(':')[1]
         if (!id) {
-            // TODO use bot.catch
-            log.error(`No id in explain action ${ctx.match.input}`)
-            return ctx.reply('Something went wrong :(')
+            throw new Error(`No id in explain action ${ctx.match.input}`)
         }
         const correction = await stores.correctionStore.getCorrection(
             ctx.user.chatId,
             id
         )
         if (!correction) {
-            log.error(`No correction with id ${id}`)
-            return ctx.reply('Something went wrong :(')
+            throw new Error(`No correction with id ${id}`)
         }
 
         return ctx.editMessageReplyMarkup(
@@ -114,27 +153,25 @@ export function createBot({ bot, openAi, stores }: Config) {
         const id = cmd[1]
         const i = cmd[2]
         if (!id) {
-            log.error(`No id in explainReplacement action ${ctx.match.input}`)
-            return ctx.reply('Something went wrong :(')
+            throw new Error(
+                `No id in explainReplacement action ${ctx.match.input}`
+            )
         }
         const correction = await stores.correctionStore.getCorrection(
             ctx.user.chatId,
             id
         )
         if (!correction) {
-            log.error(`No correction with id ${id}`)
-            return ctx.reply('Something went wrong :(')
+            throw new Error(`No correction with id ${id}`)
         }
         if (!i) {
-            log.error(
-                `No correction index in explainReplacement action ${ctx.match.input}`
+            throw new Error(
+                `No index in explainReplacement action ${ctx.match.input}`
             )
-            return ctx.reply('Something went wrong :(')
         }
         const unit = correction.correctionUnits[Number(i)]
         if (!unit) {
-            log.error(`No correction unit with index ${i}`)
-            return ctx.reply('Something went wrong :(')
+            throw new Error(`No correction unit with index ${i}`)
         }
         let { explanation } = unit
         if (!explanation) {

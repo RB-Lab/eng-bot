@@ -2,10 +2,10 @@ import { Handler } from 'aws-lambda'
 import { log } from './lib/log'
 import { base64Decode } from './lib/base-64'
 import { getSecrets } from './lib/secret-service'
-import { MockOpenAI, RealOpenAI } from './lib/open-ai'
+import { RealOpenAI } from './lib/open-ai'
 import { Telegraf } from 'telegraf'
 import { createBot, EngBotContext } from './lib/bot'
-import { DynamoStores } from './lib/model'
+import { AwsStores } from './lib/stores'
 import { Update } from 'telegraf/typings/core/types/typegram'
 
 export const handler: Handler = async (event) => {
@@ -28,15 +28,14 @@ export const handler: Handler = async (event) => {
         }
     }
     try {
-        const { botToken, openApiToken } = await getSecrets()
+        const { botToken, openAiToken } = await getSecrets()
         log.debug('event has body, starting Telega', event)
 
         // TODO check header for X-Telegram-Bot-Api-Secret-Token
         const bot = new Telegraf<EngBotContext>(botToken);
 
-        // const openAi = new RealOpenAI(openAiToken)
-        const openAi = new MockOpenAI()
-        const stores = new DynamoStores()
+        const openAi = new RealOpenAI(openAiToken)
+        const stores = new AwsStores()
         createBot({bot, openAi, stores})
         
         await bot.handleUpdate(message)

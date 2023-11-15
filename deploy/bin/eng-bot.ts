@@ -4,7 +4,8 @@ import * as cdk from 'aws-cdk-lib';
 import { EngBotStack } from '../lib/eng-bot-stack';
 
 const app = new cdk.App();
-new EngBotStack(app, 'EngBotStack', {
+const env = process.env.ENV
+new EngBotStack(app, `EngBotStack-${env}`, {
   /* If you don't specify 'env', this stack will be environment-agnostic.
    * Account/Region-dependent features and context lookups will not work,
    * but a single synthesized template can be deployed anywhere. */

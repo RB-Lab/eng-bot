@@ -1,6 +1,6 @@
 import { Configuration, OpenAIApi } from 'openai'
 import { log } from './log'
-import { Correction, CorrectionUnit } from './model'
+import { Correction, CorrectionUnit } from './stores'
 
 export interface OpenAI {
     getCorrection(essay: string): Promise<string>

@@ -1,19 +1,20 @@
 import { Telegraf } from "telegraf";
 import { createBot, EngBotContext } from "./lib/bot";
-import { TestStores } from "./lib/model";
-import { MockOpenAI, OpenAI, RealOpenAI } from "./lib/open-ai";
+import { log } from "./lib/log";
+import { TestStores } from "./lib/stores";
+import { MockOpenAI, RealOpenAI } from "./lib/open-ai";
 
-const token = process.env.BOT_TOKEN
+const token = process.env.BOT_TOKEN_TEST
 const openAiToken = process.env.OPEN_AI_TOKEN
 if(!token) {
-    throw new Error('BOT_TOKEN is not defined')
+    throw new Error('BOT_TOKEN_TEST is not defined')
 }
 if(!openAiToken) {
     throw new Error('OPEN_AI_TOKEN is not defined')
 }
 const bot = new Telegraf<EngBotContext>(token);
-// const openAi = new RealOpenAI(openAiToken)
-const openAi = new MockOpenAI()
+const openAi = new RealOpenAI(openAiToken)
+// const openAi = new MockOpenAI()
 
 createBot({bot, openAi, stores: new TestStores()})
 
@@ -23,6 +24,8 @@ bot.launch({
         hookPath: '/callback',
         port: 5000,
     }
+}).then(() => {
+    log.debug(`Bot started ${bot.botInfo?.username}`)
 });
 
 // Enable graceful stop

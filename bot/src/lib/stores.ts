@@ -1,8 +1,11 @@
 import { log } from './log'
+import * as fs from 'fs'
+import * as yaml from 'js-yaml'
 
 import * as aws from 'aws-sdk'
 
 export interface Stores {
+    topicsStore: TopicStore
     userStore: UserStore
     correctionStore: CorrectionStore
 }
@@ -14,8 +17,17 @@ export interface UserStore {
 
 export interface CorrectionStore {
     createCorrection(correction: Omit<Correction, 'id'>): Promise<Correction>
-    getCorrection(chatId: ID,id: ID): Promise<Correction | null>
+    getCorrection(chatId: ID, id: ID): Promise<Correction | null>
     updateCorrection(correction: Correction): Promise<Correction | null>
+}
+
+export interface TopicStore {
+    getCategories(): Promise<Category[]>
+    getTopics(categoryId: ID): Promise<string[]>
+}
+export interface Category {
+    id: ID
+    name: string
 }
 
 export interface Correction {
@@ -40,6 +52,7 @@ export interface User {
 }
 
 export class TestStores implements Stores {
+    topicsStore = new TestTopicStore()
     userStore = new TestUserStore()
     correctionStore = new TestCorrectionStore()
 }
@@ -74,7 +87,7 @@ export class TestCorrectionStore implements CorrectionStore {
         this.corrections.push(newCorrection)
         return newCorrection
     }
-    async getCorrection(chatId:ID, id: ID): Promise<Correction | null> {
+    async getCorrection(chatId: ID, id: ID): Promise<Correction | null> {
         log.debug('getting correction by id', id)
         return this.corrections.find((c) => c.id === id) || null
     }
@@ -90,13 +103,51 @@ export class TestCorrectionStore implements CorrectionStore {
     }
 }
 
-export class DynamoStores implements Stores {
+type TopicsFile = Record<string, string[]>
+
+export class TestTopicStore implements TopicStore {
+    private topics: TopicsFile | null = null
+    async getCategories(): Promise<Category[]> {
+        if (!this.topics) {
+            this.topics = await this.loadTopics()
+        }
+        return Object.keys(this.topics).map((name, id) => ({ id, name }))
+    }
+
+    async getTopics(categoryId: ID): Promise<string[]> {
+        if (!this.topics) {
+            this.topics = await this.loadTopics()
+        }
+        const categories = Object.keys(this.topics)
+        const category = categories[Number(categoryId)]
+        if (!category)
+            throw new Error(
+                `category not found, id: ${categoryId}, total categories: ${categories.length}`
+            )
+        return this.topics[category]
+    }
+
+    private loadTopics(): Promise<TopicsFile> {
+        return new Promise((resolve, reject) => {
+            fs.readFile('./assets/topics.yml', 'utf8', (err, data) => {
+                if (err) {
+                    reject(err)
+                }
+                resolve(yaml.load(data) as TopicsFile)
+            })
+        })
+    }
+}
+
+export class AwsStores implements Stores {
     userStore: DynamoUserStore
     correctionStore: DynamoCorrectionStore
+    topicsStore: TopicStore
     constructor() {
         const client = new aws.DynamoDB.DocumentClient()
         this.userStore = new DynamoUserStore(client)
         this.correctionStore = new DynamoCorrectionStore(client)
+        this.topicsStore = new S3TopicStore(new aws.S3())
     }
 }
 
@@ -106,14 +157,15 @@ export class DynamoUserStore implements UserStore {
     async getUser(chatId: ID): Promise<User | null> {
         log.debug('getting user by chatId', chatId)
         const result = await this.client
-            .get({
+            .query({
                 TableName: this.tableName,
-                Key: {
-                    chatId: String(chatId),
+                KeyConditionExpression: 'chatId = :chatId',
+                ExpressionAttributeValues: {
+                    ':chatId': String(chatId),
                 },
             })
             .promise()
-        return (result.$response.data?.Item as User) || null
+        return (result.$response.data?.Items?.[0] as User) || null
     }
     async createUser(user: User): Promise<User> {
         log.debug('creating user', user)
@@ -133,7 +185,7 @@ export class DynamoUserStore implements UserStore {
 
 export class DynamoCorrectionStore implements CorrectionStore {
     private tableName = process.env.CORRECTIONS_TABLE || 'EngBotCorrections'
-    
+
     constructor(private client: aws.DynamoDB.DocumentClient) {}
 
     async createCorrection(
@@ -151,34 +203,88 @@ export class DynamoCorrectionStore implements CorrectionStore {
             .promise()
         return item
     }
-    
-    async getCorrection(chatId:ID, id: ID): Promise<Correction | null> {
+
+    async getCorrection(chatId: ID, id: ID): Promise<Correction | null> {
         log.debug('getting correction by id', chatId, id)
-        const result = await this.client.query({
-            TableName: this.tableName,
-            KeyConditionExpression: 'chatId = :chatId and id = :id',
-            ExpressionAttributeValues: { 
-                ':chatId': String(chatId),
-                ':id': id
-            } }).promise()
+        const result = await this.client
+            .query({
+                TableName: this.tableName,
+                KeyConditionExpression: 'chatId = :chatId and id = :id',
+                ExpressionAttributeValues: {
+                    ':chatId': String(chatId),
+                    ':id': id,
+                },
+            })
+            .promise()
         return (result.$response.data?.Items?.[0] as Correction) || null
     }
-    
+
     async updateCorrection(correction: Correction): Promise<Correction | null> {
         log.debug('updating correction', correction)
-        const result = await this.client.update({
-            TableName: this.tableName,
-            Key: {
-                chatId: String(correction.chatId),
-                id: correction.id,
-            },
-            UpdateExpression: 'set corrected = :corrected, correctionUnits = :correctionUnits',
-            ExpressionAttributeValues: {
-                ':corrected': correction.corrected,
-                ':correctionUnits': correction.correctionUnits,
-            },
-            ReturnValues: 'ALL_NEW',
-        }).promise()
+        const result = await this.client
+            .update({
+                TableName: this.tableName,
+                Key: {
+                    chatId: String(correction.chatId),
+                    id: correction.id,
+                },
+                UpdateExpression:
+                    'set corrected = :corrected, correctionUnits = :correctionUnits',
+                ExpressionAttributeValues: {
+                    ':corrected': correction.corrected,
+                    ':correctionUnits': correction.correctionUnits,
+                },
+                ReturnValues: 'ALL_NEW',
+            })
+            .promise()
         return (result.$response.data?.Attributes as Correction) || null
+    }
+}
+
+export class S3TopicStore implements TopicStore {
+    private topics: TopicsFile | null = null
+    private bucketName = process.env.ASSETS_BUCKET || 'eng-bot-assets'
+    constructor(private s3: aws.S3) {}
+    async getCategories(): Promise<Category[]> {
+        if (!this.topics) {
+            this.topics = await this.loadTopics()
+        }
+        return Object.keys(this.topics).map((name, id) => ({ id, name }))
+    }
+
+    async getTopics(categoryId: ID): Promise<string[]> {
+        if (!this.topics) {
+            this.topics = await this.loadTopics()
+        }
+        const categories = Object.keys(this.topics)
+        const category = categories[Number(categoryId)]
+        if (!category)
+            throw new Error(
+                `category not found, id: ${categoryId}, total categories: ${categories.length}`
+            )
+        return this.topics[category]
+    }
+
+    private loadTopics(): Promise<TopicsFile> {
+        return new Promise((resolve, reject) => {
+            this.s3.getObject(
+                {
+                    Bucket: this.bucketName,
+                    Key: 'topics.yml',
+                },
+                (err, data) => {
+                    if (err) {
+                        return reject(err)
+                    }
+                    
+                    try {
+                        const content = data.Body?.toString('utf-8') || ''
+                        resolve(yaml.load(content) as TopicsFile)
+                    } catch (error) {
+                        reject(error)
+                    }
+                }
+            )
+        })
     }
 }
